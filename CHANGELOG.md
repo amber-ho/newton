@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add `MultiCameraRecorder` for simultaneous multi-view recording of simulations with seamless loop integration
 - Add 3D texture-based SDF, replacing NanoVDB volumes in the mesh-mesh collision pipeline for improved performance and CPU compatibility.
 - Add `--benchmark [SECONDS]` flag to examples for headless FPS measurement with warmup
 - Interactive example browser in the GL viewer with tree-view navigation and switch/reset support
@@ -11,6 +12,7 @@
 - Support kinematic bodies in VBD solver
 - Add brick stacking example
 - Add box pyramid example and ASV benchmark for dense convex-on-convex contacts
+- Add `cloth_bridge` example showing how to build a cloth simulation with supports and obstacle contacts
 
 ### Changed
 

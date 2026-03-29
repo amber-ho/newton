@@ -95,12 +95,13 @@ __all__ += [
 # ==================================================================================
 # submodule APIs
 # ==================================================================================
-from . import geometry, ik, math, selection, sensors, solvers, usd, utils, viewer  # noqa: E402
+from . import geometry, ik, math, multi_camera_recorder, selection, sensors, solvers, usd, utils, viewer  # noqa: E402
 
 __all__ += [
     "geometry",
     "ik",
     "math",
+    "multi_camera_recorder",
     "selection",
     "sensors",
     "solvers",
