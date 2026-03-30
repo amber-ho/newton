@@ -387,6 +387,7 @@ class Example:
             camera_names=["overhead", "front", "side"],
             skip_frames=60,  # Skip first 60 frames for cloth settling
         )
+        self._recording_finalized = False
 
         # Configure camera views to observe cloth-robot interaction
         # Overhead view - best for seeing cloth layout
@@ -535,6 +536,7 @@ class Example:
         self.target = self.targets[0]
 
         self.robot_key_poses_time = np.cumsum(self.robot_key_poses[:, 0])
+        self.manipulation_end_time = float(self.robot_key_poses_time[-1])
         self.endeffector_id = builder.body_count - 3
         self.endeffector_offset = wp.transform(
             [
@@ -721,6 +723,10 @@ class Example:
         # Capture frames from all camera views for multi-camera recording
         self.recorder.capture_frames()
 
+        if self.sim_time >= self.manipulation_end_time and not self._recording_finalized:
+            self._finalize_recording()
+            self.viewer.close()
+
     def test_final(self):
         p_lower = wp.vec3(-36.0, -95.0, -5.0)
         p_upper = wp.vec3(36.0, 5.0, 56.0)
@@ -741,8 +747,16 @@ class Example:
             lambda q, qd: max(abs(qd)) < 70.0,
         )
 
-        # Generate multi-camera recordings
-        print(f"\nMulti-camera recording complete!")
+        self._finalize_recording()
+
+    def _finalize_recording(self):
+        """Generate multi-camera videos once after the manipulation finishes."""
+        if self._recording_finalized:
+            return
+
+        self._recording_finalized = True
+
+        print("\nMulti-camera recording complete!")
         print(f"Captured {self.recorder.get_frame_count()} frames from 3 camera views")
         print("Generating videos from recorded frames...")
         results = self.recorder.generate_videos(fps=30, keep_frames=False)

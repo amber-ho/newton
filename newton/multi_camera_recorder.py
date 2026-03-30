@@ -221,6 +221,8 @@ class MultiCameraRecorder:
             self.viewer.lines,
         )
 
+        self._ensure_frame_buffer(camera_id)
+
         # Get frame from viewer's frame buffer as GPU array
         frame = self.viewer.get_frame(target_image=self._frame_buffers[camera_id])
 
@@ -268,18 +270,20 @@ class MultiCameraRecorder:
             cam.pitch = max(min(config["pitch"], 89.0), -89.0)
             cam.yaw = (config["yaw"] + 180.0) % 360.0 - 180.0
             cam.fov = config["fov"]
+            cam.update_screen_size(*self._get_framebuffer_size())
             return cam
 
         # Create new camera with same dimensions as viewer camera
         viewer_camera = self.viewer.camera
+        framebuffer_width, framebuffer_height = self._get_framebuffer_size()
         pos_tuple = (float(config["pos"][0]), float(config["pos"][1]), float(config["pos"][2]))
 
         recording_camera = Camera(
             fov=config["fov"],
             near=viewer_camera.near,
             far=viewer_camera.far,
-            width=viewer_camera.width,
-            height=viewer_camera.height,
+            width=framebuffer_width,
+            height=framebuffer_height,
             pos=pos_tuple,
             up_axis=viewer_camera.up_axis,
         )
@@ -290,6 +294,30 @@ class MultiCameraRecorder:
         # Cache for reuse
         self._temp_cameras[camera_id] = recording_camera
         return recording_camera
+
+    def _ensure_frame_buffer(self, camera_id: int) -> None:
+        """Ensure the cached frame buffer matches the current framebuffer size."""
+        height, width = self._get_framebuffer_shape()
+        target_shape = (height, width, 3)
+        target_buffer = self._frame_buffers[camera_id]
+
+        if target_buffer is not None and target_buffer.shape == target_shape:
+            return
+
+        self._frame_buffers[camera_id] = wp.empty(
+            shape=target_shape,
+            dtype=wp.uint8,  # pyright: ignore[reportArgumentType]
+            device=self.viewer.device,
+        )
+
+    def _get_framebuffer_shape(self) -> tuple[int, int]:
+        """Return the current framebuffer height and width."""
+        width, height = self._get_framebuffer_size()
+        return height, width
+
+    def _get_framebuffer_size(self) -> tuple[int, int]:
+        """Return the current framebuffer width and height."""
+        return self.viewer.renderer._screen_width, self.viewer.renderer._screen_height
 
     def _restore_camera_state(self) -> None:
         """Restore the original camera state (deprecated, kept for compatibility)."""
