@@ -378,6 +378,44 @@ class Example:
         # Ensure FK evaluation (for non-MuJoCo solvers):
         newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.state_0)
 
+        # Initialize multi-camera recorder for cloth-robot interaction
+        from newton import multi_camera_recorder
+        self.recorder = multi_camera_recorder.MultiCameraRecorder(
+            viewer,
+            output_dir="./cloth_franka_recordings",
+            num_cameras=3,
+            camera_names=["overhead", "front", "side"],
+            skip_frames=60,  # Skip first 60 frames for cloth settling
+        )
+
+        # Configure camera views to observe cloth-robot interaction
+        # Overhead view - best for seeing cloth layout
+        self.recorder.set_camera_config(
+            0,
+            pos=wp.vec3(0.0, 0.0, 1.5),
+            pitch=-90.0,  # Looking straight down
+            yaw=0.0,
+            fov=60.0,
+        )
+
+        # Front view - see robot gripper and cloth
+        self.recorder.set_camera_config(
+            1,
+            pos=wp.vec3(1.0, 0.8, 0.5),
+            pitch=-30.0,
+            yaw=-135.0,
+            fov=50.0,
+        )
+
+        # Side view - see robot arm and cloth draping
+        self.recorder.set_camera_config(
+            2,
+            pos=wp.vec3(0.0, 1.2, 0.7),
+            pitch=-25.0,
+            yaw=-90.0,
+            fov=50.0,
+        )
+
         # graph capture
         if self.add_cloth:
             self.capture()
@@ -671,6 +709,9 @@ class Example:
         self.model.shape_transform = self.sim_shape_transform
         self.model.shape_scale = self.sim_shape_scale
 
+        # Capture frames from all camera views for multi-camera recording
+        self.recorder.capture_frames()
+
     def test_final(self):
         p_lower = wp.vec3(-36.0, -95.0, -5.0)
         p_upper = wp.vec3(36.0, 5.0, 56.0)
@@ -690,6 +731,19 @@ class Example:
             "body velocities are within a reasonable range",
             lambda q, qd: max(abs(qd)) < 70.0,
         )
+
+        # Generate multi-camera recordings
+        print(f"\nMulti-camera recording complete!")
+        print(f"Captured {self.recorder.get_frame_count()} frames from 3 camera views")
+        print("Generating videos from recorded frames...")
+        results = self.recorder.generate_videos(fps=30, keep_frames=False)
+
+        print("\nVideo generation results:")
+        for camera_name, success in results.items():
+            status = "✅ Generated" if success else "❌ Failed"
+            print(f"  {status}: {camera_name}.mp4")
+
+        print("\nVideos saved to: ./cloth_franka_recordings/")
 
 
 if __name__ == "__main__":
