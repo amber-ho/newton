@@ -479,45 +479,54 @@ class Example:
         clamp_open_activation_val = 0.8
 
         self.robot_key_poses = np.array(
+            # [
+            #     # translation_duration, gripper transform (3D position [cm], 4D quaternion), gripper activation
+            #     # top left
+            #     [2.5, 31.0, -60.0, 23.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, 31.0, -60.0, 23.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, 26.0, -60.0, 26.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, 12.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [3, -6.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1, -6.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     # bottom left
+            #     [2, 15.0, -33.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [3, 15.0, -33.0, 21.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [3, 15.0, -33.0, 21.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, 15.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [3, -2.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1, -2.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     # top right
+            #     [2, -28.0, -60.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, -28.0, -60.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, -28.0, -60.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, -18.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [3, 5.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1, 5.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     # bottom right
+            #     [3, -18.0, -30.0, 20.5, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [3, -18.0, -30.0, 20.5, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [3, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     # bottom
+            #     [2, 0.0, -20.0, 30.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, 0.0, -20.0, 19.5, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, 0.0, -20.0, 19.5, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [2, 0.0, -20.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1, 0.0, -30.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1.5, 0.0, -30.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1.5, 0.0, -40.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
+            #     [1.5, 0.0, -40.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            #     [2, -28.0, -60.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+            # ],
             [
-                # translation_duration, gripper transform (3D position [cm], 4D quaternion), gripper activation
-                # top left
-                [2.5, 31.0, -60.0, 23.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, 31.0, -60.0, 23.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, 26.0, -60.0, 26.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, 12.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [3, -6.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1, -6.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                # bottom left
-                [2, 15.0, -33.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [3, 15.0, -33.0, 21.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [3, 15.0, -33.0, 21.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, 15.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [3, -2.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1, -2.0, -33.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                # top right
-                [2, -28.0, -60.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, -28.0, -60.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, -28.0, -60.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, -18.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [3, 5.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1, 5.0, -60.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                # bottom right
-                [3, -18.0, -30.0, 20.5, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [3, -18.0, -30.0, 20.5, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [3, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, -3.0, -30.0, 31.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                # bottom
-                [2, 0.0, -20.0, 30.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, 0.0, -20.0, 19.5, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, 0.0, -20.0, 19.5, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [2, 0.0, -20.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1, 0.0, -30.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1.5, 0.0, -30.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1.5, 0.0, -40.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],
-                [1.5, 0.0, -40.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
-                [2, -28.0, -60.0, 28.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],
+                # duration, x, y, z, qw, qx, qy, qz, gripper
+                [2.0,  0.0, -20.0, 30.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],   # 到衣服上方
+                [2.0,  0.0, -20.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],   # 往下
+                [1.0,  0.0, -20.0, 20.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],  # 夾住
+                [2.0,  0.0, -20.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],  # 往上提
+                [1.5,  0.0, -20.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_close_activation_val],  # 停一下
+                [1.0,  0.0, -20.0, 35.0, 1, 0.0, 0.0, 0.0, clamp_open_activation_val],   # 放開（可刪）
             ],
             dtype=np.float32,
         )

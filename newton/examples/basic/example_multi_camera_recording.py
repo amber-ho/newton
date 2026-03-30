@@ -14,25 +14,30 @@
 # limitations under the License.
 
 ###########################################################################
-# Example Multi-Camera Recording
+# Example Multi-Camera Recording with Fixed Display Camera
 #
-# Demonstrates how to record a simulation from multiple camera viewpoints
-# simultaneously and export them as separate video files.
+# Demonstrates recording a simulation from multiple camera viewpoints
+# simultaneously WITHOUT affecting the displayed view. The main display
+# camera stays fixed while 3 independent recording cameras capture frames
+# off-screen from different angles, eliminating on-screen camera jumping.
 #
 # The MultiCameraRecorder integrates seamlessly into the existing simulation
-# loop without requiring any changes to the core architecture. Simply call
+# loop without requiring any core architecture changes. Simply call
 # recorder.capture_frames() after example.render() in the main loop.
 #
+# Key improvement: Recording cameras are now independent off-screen cameras.
+# The visible simulation window is never affected by recording operations.
+#
 # This example creates a simple scene with shapes dropping and records from
-# 3 different viewpoints: front (45°), side (-135°), and top (overhead).
+# 3 different viewpoints: front (45°), side (90°), and top (overhead).
 #
 # Command: python -m newton.examples multi_camera_recording
 #
 # Output:
-#   - ./multi_camera_recordings/camera_0/*.png (front view frames)
-#   - ./multi_camera_recordings/camera_1/*.png (side view frames)
-#   - ./multi_camera_recordings/camera_2/*.png (top view frames)
-#   - ./multi_camera_recordings/camera_*.mp4 (final video files)
+#   - ./multi_camera_recordings/front_view/*.png (front view frames)
+#   - ./multi_camera_recordings/side_view/*.png (side view frames)
+#   - ./multi_camera_recordings/top_view/*.png (top view frames)
+#   - ./multi_camera_recordings/*.mp4 (final video files)
 #
 ###########################################################################
 

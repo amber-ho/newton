@@ -16,8 +16,12 @@
 """Multi-camera recording support for Newton simulations.
 
 This module provides functionality to record multiple camera views during a simulation
-and export them as separate video files. It integrates seamlessly with the existing
-simulation loop without requiring architectural changes.
+and export them as separate video files. Recording cameras are independent and do not
+affect the visible simulation view.
+
+The visible camera remains fixed on its current view while 3+ independent recording
+cameras capture frames simultaneously from different angles. All views are recorded
+without any on-screen camera jumping.
 
 Example:
     >>> from newton import viewer, multi_camera_recorder
@@ -27,16 +31,17 @@ Example:
     >>> v = viewer.ViewerGL()
     >>> recorder = multi_camera_recorder.MultiCameraRecorder(v, output_dir="./recordings")
     >>>
-    >>> # Configure camera views
+    >>> # Configure independent recording camera views
     >>> recorder.set_camera_config(0, pos=wp.vec3(10, 0, 2), pitch=-5, yaw=-45)
     >>> recorder.set_camera_config(1, pos=wp.vec3(-10, 0, 2), pitch=-5, yaw=135)
     >>> recorder.set_camera_config(2, pos=wp.vec3(0, 10, 2), pitch=-5, yaw=-135)
     >>>
-    >>> # During simulation loop, capture frames
+    >>> # During simulation loop, capture frames from all cameras
+    >>> # The displayed view stays fixed; recording happens off-screen
     >>> for frame in range(num_frames):
     ...     example.step()
     ...     example.render()
-    ...     recorder.capture_frames()  # Captures all 3 camera views
+    ...     recorder.capture_frames()  # Off-screen capture from 3 camera views
     >>>
     >>> # Generate video files after simulation
     >>> recorder.generate_videos(fps=30)
@@ -60,7 +65,7 @@ __all__ = ["MultiCameraRecorder"]
 
 
 class MultiCameraRecorder:
-    """Records simulation frames from multiple camera viewpoints.
+    """Records simulation frames from multiple independent camera viewpoints.
 
     This class manages capture of simulation frames from multiple camera configurations,
     storing them separately for later video generation. It hooks into the existing
@@ -69,8 +74,8 @@ class MultiCameraRecorder:
     Attributes:
         viewer: The ViewerGL instance to capture from.
         output_dir: Directory where frame buffers will be stored.
-        num_cameras: Number of separate camera views to record.
-        camera_names: Human-readable names for each camera.
+        num_cameras: Number of separate recording camera views.
+        camera_names: Human-readable names for each recording camera.
     """
 
     def __init__(
@@ -83,6 +88,9 @@ class MultiCameraRecorder:
         async_save: bool = True,
     ):
         """Initialize the multi-camera recorder.
+
+        Recording cameras are independent off-screen rendering cameras. The viewer's
+        displayed camera is never modified during recording.
 
         Args:
             viewer: The ViewerGL instance to capture from.
@@ -121,11 +129,8 @@ class MultiCameraRecorder:
         self._frame_idx = 0
         self._frame_buffers: list[wp.array | None] = [None] * num_cameras
 
-        # Store original camera state for restoration
-        self._original_pos = None
-        self._original_pitch = None
-        self._original_yaw = None
-        self._original_fov = None
+        # Cache of temporary camera objects for rendering (one per recording camera)
+        self._temp_cameras: list[object | None] = [None] * num_cameras
 
     def set_camera_config(
         self, camera_id: int, pos: wp.vec3 | None = None, pitch: float | None = None, yaw: float | None = None, fov: float | None = None
@@ -181,24 +186,18 @@ class MultiCameraRecorder:
             self._frame_idx += 1
             return
 
-        # Save original camera state on first capture
-        if self._original_pos is None:
-            self._original_pos = self.viewer.camera.pos.copy()
-            self._original_pitch = self.viewer.camera.pitch
-            self._original_yaw = self.viewer.camera.yaw
-            self._original_fov = self.viewer.camera.fov
-
-        # Capture frame for each camera
+        # Capture frame for each camera using off-screen rendering
         for cam_id in range(self.num_cameras):
             self._capture_single_camera(cam_id)
-
-        # Restore original camera state
-        self._restore_camera_state()
 
         self._frame_idx += 1
 
     def _capture_single_camera(self, camera_id: int) -> None:
-        """Capture and save a single frame from one camera view.
+        """Capture and save a single frame from one recording camera.
+
+        This method renders the scene with a recording camera without affecting
+        the displayed view. The recording camera is an independent off-screen
+        camera that captures from its own viewpoint.
 
         Args:
             camera_id: Index of the camera to capture from.
@@ -210,21 +209,19 @@ class MultiCameraRecorder:
             warnings.warn(msg, stacklevel=2)
             return
 
-        # Get camera configuration
+        # Get or create the recording camera for this view
         config = self._camera_configs[camera_id]
+        recording_camera = self._get_or_create_recording_camera(camera_id, config)
 
-        # Switch to this camera view
-        self.viewer.set_camera(
-            pos=config["pos"],
-            pitch=config["pitch"],
-            yaw=config["yaw"],
+        # Render the scene with the recording camera to the frame buffer (off-screen)
+        # This does not affect the displayed view
+        self.viewer.renderer.render_camera_to_buffer(
+            recording_camera,
+            self.viewer.objects,
+            self.viewer.lines,
         )
-        self.viewer.camera.fov = config["fov"]
 
-        # Re-render with this camera (end_frame will use new camera)
-        self.viewer.end_frame()
-
-        # Get frame from viewer as GPU array
+        # Get frame from viewer's frame buffer as GPU array
         frame = self.viewer.get_frame(target_image=self._frame_buffers[camera_id])
 
         # Cache buffer for reuse
@@ -245,15 +242,59 @@ class MultiCameraRecorder:
         else:
             image.save(str(filename))
 
+    def _get_or_create_recording_camera(self, camera_id: int, config: dict) -> object:
+        """Get or create a recording camera object with the given configuration.
+
+        Recording cameras are independent temporary camera objects configured for
+        each recording view. They are reused across frames for efficiency.
+
+        Args:
+            camera_id: Index of the camera.
+            config: Camera configuration dict with keys: pos, pitch, yaw, fov.
+
+        Returns:
+            Camera object configured with the given parameters.
+        """
+        from pyglet.math import Vec3 as PyVec3
+
+        from ._src.viewer.camera import Camera  # noqa: PLC0415
+
+        # Reuse existing camera if available and configuration hasn't changed
+        if self._temp_cameras[camera_id] is not None:
+            cam = self._temp_cameras[camera_id]
+            # Update orientation and FOV if they changed
+            pos_tuple = (float(config["pos"][0]), float(config["pos"][1]), float(config["pos"][2]))
+            cam.pos = PyVec3(*pos_tuple)
+            cam.pitch = max(min(config["pitch"], 89.0), -89.0)
+            cam.yaw = (config["yaw"] + 180.0) % 360.0 - 180.0
+            cam.fov = config["fov"]
+            return cam
+
+        # Create new camera with same dimensions as viewer camera
+        viewer_camera = self.viewer.camera
+        pos_tuple = (float(config["pos"][0]), float(config["pos"][1]), float(config["pos"][2]))
+
+        recording_camera = Camera(
+            fov=config["fov"],
+            near=viewer_camera.near,
+            far=viewer_camera.far,
+            width=viewer_camera.width,
+            height=viewer_camera.height,
+            pos=pos_tuple,
+            up_axis=viewer_camera.up_axis,
+        )
+
+        recording_camera.pitch = max(min(config["pitch"], 89.0), -89.0)
+        recording_camera.yaw = (config["yaw"] + 180.0) % 360.0 - 180.0
+
+        # Cache for reuse
+        self._temp_cameras[camera_id] = recording_camera
+        return recording_camera
+
     def _restore_camera_state(self) -> None:
-        """Restore the original camera state."""
-        if self._original_pos is not None:
-            self.viewer.set_camera(
-                pos=self._original_pos,
-                pitch=self._original_pitch,
-                yaw=self._original_yaw,
-            )
-            self.viewer.camera.fov = self._original_fov
+        """Restore the original camera state (deprecated, kept for compatibility)."""
+        # No longer needed - viewer camera is never modified
+        pass
 
     def generate_videos(
         self,
@@ -361,11 +402,8 @@ class MultiCameraRecorder:
     def reset(self) -> None:
         """Reset the recorder state.
 
-        Clears frame counter and camera state. Useful if you want to record
+        Clears frame counter and camera cache. Useful if you want to record
         multiple simulations with the same recorder instance.
         """
         self._frame_idx = 0
-        self._original_pos = None
-        self._original_pitch = None
-        self._original_yaw = None
-        self._original_fov = None
+        self._temp_cameras = [None] * self.num_cameras

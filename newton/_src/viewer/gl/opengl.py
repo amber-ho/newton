@@ -1207,6 +1207,97 @@ class RendererGL:
         err = gl.glGetError()
         assert err == gl.GL_NO_ERROR, hex(err)
 
+    def render_camera_to_buffer(self, camera, objects, lines=None):
+        """Render the scene with a custom camera to the internal frame buffer.
+
+        This method renders using a custom camera without modifying the main camera state.
+        Useful for off-screen rendering and multi-camera capture. The rendered result
+        is available in the internal frame buffer and can be read via get_frame().
+
+        Args:
+            camera: Camera object with position, rotation, FOV, and matrix methods.
+            objects: List of objects to render.
+            lines: Optional list of lines to render.
+
+        Note:
+            This method does not present to the screen or process events. The internal
+            frame buffer is updated and can be read with get_frame() without affecting
+            the display camera.
+        """
+        gl = RendererGL.gl
+        self._make_current()
+
+        gl.glClearColor(*self.sky_upper, 1)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthMask(True)
+        gl.glDepthRange(0.0, 1.0)
+
+        # Store original camera state
+        original_camera = self.camera
+        self.camera = camera
+
+        # Store matrices for rendering
+        self._view_matrix = self.camera.get_view_matrix()
+        self._projection_matrix = self.camera.get_projection_matrix()
+
+        # 1. Render depth of scene to texture (from light's perspective)
+        gl.glViewport(0, 0, self._shadow_width, self._shadow_height)
+        gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, self._shadow_fbo)
+        gl.glClear(gl.GL_DEPTH_BUFFER_BIT)
+
+        if self.draw_shadows:
+            # Note: lines are skipped during shadow pass since they don't cast shadows
+            self._render_shadow_map(objects)
+
+        # Reset viewport
+        gl.glViewport(0, 0, self._screen_width, self._screen_height)
+
+        # Select target framebuffer (MSAA or regular) for scene rendering
+        target_fbo = self._frame_msaa_fbo if getattr(self, "msaa_samples", 0) > 0 else self._frame_fbo
+
+        # Set texture as render target
+        gl.glBindFramebuffer(gl.GL_DRAW_FRAMEBUFFER, target_fbo)
+        gl.glDrawBuffer(gl.GL_COLOR_ATTACHMENT0)
+
+        gl.glClearColor(*self.sky_upper, 1)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        gl.glBindVertexArray(0)
+
+        self._render_scene(objects)
+
+        # Render lines after main scene but before MSAA resolve
+        if lines:
+            self._render_lines(lines)
+
+        # If MSAA is enabled, resolve the multi-sample buffer into texture FBO
+        if getattr(self, "msaa_samples", 0) > 0 and self._frame_msaa_fbo is not None:
+            gl.glBindFramebuffer(gl.GL_READ_FRAMEBUFFER, self._frame_msaa_fbo)
+            gl.glReadBuffer(gl.GL_COLOR_ATTACHMENT0)
+
+            gl.glBindFramebuffer(gl.GL_DRAW_FRAMEBUFFER, self._frame_fbo)
+            gl.glDrawBuffer(gl.GL_COLOR_ATTACHMENT0)
+
+            gl.glBlitFramebuffer(
+                0,
+                0,
+                self._screen_width,
+                self._screen_height,
+                0,
+                0,
+                self._screen_width,
+                self._screen_height,
+                gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT,
+                gl.GL_NEAREST,
+            )
+
+        # Restore original camera state
+        self.camera = original_camera
+        self._view_matrix = self.camera.get_view_matrix()
+        self._projection_matrix = self.camera.get_projection_matrix()
+
+        err = gl.glGetError()
+        assert err == gl.GL_NO_ERROR, hex(err)
+
     def present(self):
         if not self.headless:
             self.window.flip()
