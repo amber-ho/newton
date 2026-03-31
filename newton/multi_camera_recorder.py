@@ -131,6 +131,7 @@ class MultiCameraRecorder:
 
         # Cache of temporary camera objects for rendering (one per recording camera)
         self._temp_cameras: list[object | None] = [None] * num_cameras
+        self._save_threads: list[threading.Thread] = []
 
     def set_camera_config(
         self, camera_id: int, pos: wp.vec3 | None = None, pitch: float | None = None, yaw: float | None = None, fov: float | None = None
@@ -240,7 +241,9 @@ class MultiCameraRecorder:
 
         # Save asynchronously or synchronously
         if self.async_save:
-            threading.Thread(target=image.save, args=(str(filename),), daemon=False).start()
+            save_thread = threading.Thread(target=self._save_image, args=(image, filename), daemon=False)
+            self._save_threads.append(save_thread)
+            save_thread.start()
         else:
             image.save(str(filename))
 
@@ -324,6 +327,21 @@ class MultiCameraRecorder:
         # No longer needed - viewer camera is never modified
         pass
 
+    def _save_image(self, image, filename: Path) -> None:
+        """Save an image to disk from a background thread."""
+        image.save(str(filename))
+
+    def _wait_for_pending_saves(self) -> None:
+        """Wait for all background image saves to finish."""
+        if not self._save_threads:
+            return
+
+        pending_threads = self._save_threads
+        self._save_threads = []
+
+        for save_thread in pending_threads:
+            save_thread.join()
+
     def generate_videos(
         self,
         fps: int = 30,
@@ -358,6 +376,8 @@ class MultiCameraRecorder:
             msg = "imageio-ffmpeg not installed. Videos cannot be generated. Install with: pip install imageio-ffmpeg"
             warnings.warn(msg, stacklevel=2)
             return {name: False for name in self.camera_names}
+
+        self._wait_for_pending_saves()
 
         results = {}
 
@@ -435,3 +455,5 @@ class MultiCameraRecorder:
         """
         self._frame_idx = 0
         self._temp_cameras = [None] * self.num_cameras
+        self._wait_for_pending_saves()
+        self._save_threads = []
