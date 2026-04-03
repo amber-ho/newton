@@ -376,6 +376,14 @@ class MultiCameraRecorder:
             msg = "imageio-ffmpeg not installed. Videos cannot be generated. Install with: pip install imageio-ffmpeg"
             warnings.warn(msg, stacklevel=2)
             return {name: False for name in self.camera_names}
+        try:
+            from PIL import Image  # noqa: PLC0415
+        except ImportError:
+            msg = "PIL not installed. Videos cannot be generated. Install with: pip install pillow"
+            warnings.warn(msg, stacklevel=2)
+            return {name: False for name in self.camera_names}
+
+        import numpy as np  # noqa: PLC0415
 
         self._wait_for_pending_saves()
 
@@ -395,29 +403,35 @@ class MultiCameraRecorder:
             output_filename = self.output_dir / f"{camera_name}.mp4"
 
             try:
-                # Get frame dimensions from first frame
-                from PIL import Image  # noqa: PLC0415
+                # Read first frame to get dimensions; ensure even size for H.264 encoding.
+                with Image.open(frame_files[0]) as first_frame:
+                    width, height = first_frame.size
 
-                first_frame = Image.open(frame_files[0])
-                width, height = first_frame.size
+                even_width = width if width % 2 == 0 else width + 1
+                even_height = height if height % 2 == 0 else height + 1
+                needs_padding = even_width != width or even_height != height
 
                 # Use imageio-ffmpeg to write video
                 writer = ffmpeg.write_frames(
                     str(output_filename),
-                    size=(width, height),
+                    size=(even_width, even_height),
                     fps=fps,
                     codec=codec,
-                    macro_block_size=8,
+                    macro_block_size=1,
                     quality=quality,
                 )
                 writer.send(None)  # Initialize
 
                 # Send each frame to the encoder
                 for frame_path in frame_files:
-                    frame_image = Image.open(frame_path)
-                    import numpy as np  # noqa: PLC0415
+                    with Image.open(frame_path) as frame_image:
+                        frame_array = np.array(frame_image.convert("RGB"))
 
-                    frame_array = np.array(frame_image)
+                    if needs_padding:
+                        padded_frame = np.zeros((even_height, even_width, frame_array.shape[2]), dtype=frame_array.dtype)
+                        padded_frame[:height, :width] = frame_array
+                        frame_array = padded_frame
+
                     writer.send(frame_array)
 
                 writer.close()
