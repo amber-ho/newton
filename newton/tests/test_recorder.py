@@ -30,6 +30,7 @@ from newton._src.viewer.viewer_file import (
     pointer_as_key,
 )
 from newton.tests.unittest_utils import add_function_test, get_test_devices
+from newton.multi_camera_recorder import MultiCameraRecorder
 from newton.viewer import ViewerFile
 
 
@@ -158,6 +159,38 @@ def test_recorder_backward_compatibility(test: TestRecorder, device):
     test.assertEqual(len(recorder_list.history), 10)
     test.assertEqual(recorder_list.history[0]["frame"], 0)
     test.assertEqual(recorder_list.history[9]["frame"], 9)
+
+
+def test_multi_camera_recorder_depth_configuration(test: TestRecorder, device):
+    """Test depth export configuration validation and directory setup."""
+
+    class _StubRenderer:
+        _screen_width = 64
+        _screen_height = 48
+
+    class _StubViewer:
+        def __init__(self):
+            self.renderer = _StubRenderer()
+            self.device = wp.get_device(device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        viewer = _StubViewer()
+
+        with test.assertRaises(ValueError):
+            MultiCameraRecorder(viewer, output_dir=tmpdir, depth_model=object())
+
+        recorder = MultiCameraRecorder(
+            viewer,
+            output_dir=tmpdir,
+            num_cameras=2,
+            camera_names=["top", "side"],
+            depth_model=object(),
+            depth_state_getter=lambda: object(),
+        )
+
+        test.assertTrue(os.path.isdir(os.path.join(tmpdir, "top", "depth")))
+        test.assertTrue(os.path.isdir(os.path.join(tmpdir, "side", "depth")))
+        test.assertEqual(recorder.get_frame_count(), 0)
 
 
 def test_recorder_ringbuffer_save_load(test: TestRecorder, device):
@@ -401,6 +434,13 @@ add_function_test(
     TestRecorder,
     "test_recorder_backward_compatibility",
     test_recorder_backward_compatibility,
+    devices=devices,
+)
+
+add_function_test(
+    TestRecorder,
+    "test_multi_camera_recorder_depth_configuration",
+    test_multi_camera_recorder_depth_configuration,
     devices=devices,
 )
 

@@ -75,3 +75,4 @@ docs/_static/viser/
 **/*.ipynb_checkpoints/
 
 cloth_franka_recordings/
+cloth_franka_data_export/

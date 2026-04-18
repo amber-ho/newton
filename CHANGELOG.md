@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- Export per-camera depth maps as `.npy` files from `MultiCameraRecorder` when given a model and current simulation state
 - Resolve USD asset references recursively in `resolve_usd_from_url` so nested stages are fully downloaded
 - Unify CPU and GPU inertia validation to produce identical results for zero-mass bodies with `bound_mass`, singular inertia, non-symmetric tensors, and triangle-inequality boundary cases
 - Fix `UnboundLocalError` crash in detailed inertia validation when eigenvalue decomposition encounters NaN/Inf input

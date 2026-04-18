@@ -386,6 +386,8 @@ class Example:
             num_cameras=3,
             camera_names=["overhead", "front", "side"],
             skip_frames=60,  # Skip first 60 frames for cloth settling
+            depth_model=self.model,
+            depth_state_getter=lambda: self.viz_state,
         )
         self._recording_finalized = False
 
@@ -716,12 +718,12 @@ class Example:
         )
         self.viewer.end_frame()
 
+        # Capture frames from all camera views for multi-camera recording
+        self.recorder.capture_frames()
+
         # Restore simulation shape data
         self.model.shape_transform = self.sim_shape_transform
         self.model.shape_scale = self.sim_shape_scale
-
-        # Capture frames from all camera views for multi-camera recording
-        self.recorder.capture_frames()
 
         if self.sim_time >= self.manipulation_end_time and not self._recording_finalized:
             self._finalize_recording()

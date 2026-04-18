@@ -59,6 +59,9 @@ from typing import TYPE_CHECKING
 import warp as wp
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from . import Model, State
     from ._src.viewer import ViewerGL
 
 __all__ = ["MultiCameraRecorder"]
@@ -86,6 +89,8 @@ class MultiCameraRecorder:
         camera_names: list[str] | None = None,
         skip_frames: int = 0,
         async_save: bool = True,
+        depth_model: Model | None = None,
+        depth_state_getter: Callable[[], State] | None = None,
     ):
         """Initialize the multi-camera recorder.
 
@@ -99,12 +104,22 @@ class MultiCameraRecorder:
             camera_names: List of names for each camera. If None, uses "camera_0", "camera_1", etc.
             skip_frames: Number of initial frames to skip before recording [default: 0].
             async_save: Whether to save frames asynchronously in background threads [default: True].
+            depth_model: Simulation model used to render depth images [default: None].
+            depth_state_getter: Callable that returns the current simulation state for
+                depth rendering [default: None].
         """
         self.viewer = viewer
         self.output_dir = Path(output_dir)
         self.num_cameras = num_cameras
         self.async_save = async_save
         self.skip_frames = skip_frames
+        self._depth_model = depth_model
+        self._depth_state_getter = depth_state_getter
+        self._depth_enabled = depth_model is not None or depth_state_getter is not None
+
+        if (depth_model is None) != (depth_state_getter is None):
+            msg = "depth_model and depth_state_getter must be provided together to enable depth export"
+            raise ValueError(msg)
 
         if camera_names is None:
             self.camera_names = [f"camera_{i}" for i in range(num_cameras)]
@@ -118,6 +133,8 @@ class MultiCameraRecorder:
         for name in self.camera_names:
             camera_dir = self.output_dir / name
             camera_dir.mkdir(parents=True, exist_ok=True)
+            if self._depth_enabled:
+                (camera_dir / "depth").mkdir(parents=True, exist_ok=True)
 
         # Store camera configurations: (pos, pitch, yaw, fov)
         self._camera_configs: list[dict] = [
@@ -132,6 +149,9 @@ class MultiCameraRecorder:
         # Cache of temporary camera objects for rendering (one per recording camera)
         self._temp_cameras: list[object | None] = [None] * num_cameras
         self._save_threads: list[threading.Thread] = []
+        self._depth_sensor = None
+        self._depth_rays: list[wp.array | None] = [None] * num_cameras
+        self._depth_buffers: list[wp.array | None] = [None] * num_cameras
 
     def set_camera_config(
         self, camera_id: int, pos: wp.vec3 | None = None, pitch: float | None = None, yaw: float | None = None, fov: float | None = None
@@ -190,6 +210,8 @@ class MultiCameraRecorder:
         # Capture frame for each camera using off-screen rendering
         for cam_id in range(self.num_cameras):
             self._capture_single_camera(cam_id)
+            if self._depth_enabled:
+                self._capture_single_camera_depth(cam_id)
 
         self._frame_idx += 1
 
@@ -331,6 +353,90 @@ class MultiCameraRecorder:
         """Save an image to disk from a background thread."""
         image.save(str(filename))
 
+    def _capture_single_camera_depth(self, camera_id: int) -> None:
+        """Capture and save a depth map for one recording camera."""
+        self._ensure_depth_sensor()
+
+        state = self._depth_state_getter()
+        self._depth_sensor.sync_transforms(state)
+
+        config = self._camera_configs[camera_id]
+        camera_transform = wp.array([[self._camera_config_to_transform(config)]], dtype=wp.transform)
+
+        self._ensure_depth_buffer(camera_id)
+        camera_rays = self._get_depth_rays(camera_id)
+
+        self._depth_sensor.update(
+            state,
+            camera_transform,
+            camera_rays,
+            color_image=None,
+            depth_image=self._depth_buffers[camera_id],
+        )
+
+        depth_np = self._depth_buffers[camera_id].numpy()[0, 0]
+        depth_path = self.output_dir / self.camera_names[camera_id] / "depth" / f"{self._frame_idx - self.skip_frames:05d}.npy"
+        self._save_depth_array(depth_np, depth_path)
+
+    def _ensure_depth_sensor(self) -> None:
+        """Create the tiled camera sensor lazily when depth export is enabled."""
+        if self._depth_sensor is not None:
+            return
+
+        from .sensors import SensorTiledCamera  # noqa: PLC0415
+
+        self._depth_sensor = SensorTiledCamera(
+            model=self._depth_model,
+            config=SensorTiledCamera.Config(
+                default_light=True,
+                default_light_shadows=True,
+                checkerboard_texture=True,
+                backface_culling=True,
+            ),
+        )
+
+    def _ensure_depth_buffer(self, camera_id: int) -> None:
+        """Ensure the cached depth buffer matches the current framebuffer size."""
+        height, width = self._get_framebuffer_shape()
+        target_shape = (1, 1, height, width)
+        target_buffer = self._depth_buffers[camera_id]
+
+        if target_buffer is not None and target_buffer.shape == target_shape:
+            return
+
+        self._depth_buffers[camera_id] = self._depth_sensor.create_depth_image_output(width, height, 1)
+        self._depth_rays[camera_id] = None
+
+    def _get_depth_rays(self, camera_id: int) -> wp.array:
+        """Return cached pinhole rays for the current camera configuration."""
+        if self._depth_rays[camera_id] is not None:
+            return self._depth_rays[camera_id]
+
+        import math  # noqa: PLC0415
+
+        width, height = self._get_framebuffer_size()
+        fov_radians = math.radians(self._camera_configs[camera_id]["fov"])
+        self._depth_rays[camera_id] = self._depth_sensor.compute_pinhole_camera_rays(width, height, fov_radians)
+        return self._depth_rays[camera_id]
+
+    def _camera_config_to_transform(self, config: dict) -> wp.transform:
+        """Convert a recorder camera config into a SensorTiledCamera transform."""
+        import math  # noqa: PLC0415
+
+        pitch = math.radians(config["pitch"])
+        yaw = math.radians(config["yaw"])
+
+        quat_pitch = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), pitch)
+        quat_yaw = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), yaw)
+
+        return wp.transform(config["pos"], quat_yaw * quat_pitch)
+
+    def _save_depth_array(self, depth: object, filename: Path) -> None:
+        """Save a depth array to disk."""
+        import numpy as np  # noqa: PLC0415
+
+        np.save(str(filename), depth)
+
     def _wait_for_pending_saves(self) -> None:
         """Wait for all background image saves to finish."""
         if not self._save_threads:
@@ -469,5 +575,7 @@ class MultiCameraRecorder:
         """
         self._frame_idx = 0
         self._temp_cameras = [None] * self.num_cameras
+        self._depth_rays = [None] * self.num_cameras
+        self._depth_buffers = [None] * self.num_cameras
         self._wait_for_pending_saves()
         self._save_threads = []

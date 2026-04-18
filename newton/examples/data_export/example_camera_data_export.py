@@ -164,10 +164,13 @@ class NewtonDataExporter:
         v = (fy * points_camera[:, 1] / points_camera[:, 2]) + cy
         z = points_camera[:, 2]
         
+        # Convert depth image to numpy for indexing
+        depth_np = depth_image.numpy()[0, 0]  # (H, W)
+        
         visibilities = np.zeros(len(points_camera), dtype=bool)
         for i in range(len(points_camera)):
             if 0 <= int(u[i]) < self.render_width and 0 <= int(v[i]) < self.render_height:
-                depth_rendered = depth_image[0, 0, int(v[i]), int(u[i])]
+                depth_rendered = depth_np[int(v[i]), int(u[i])]
                 if abs(z[i] - depth_rendered) < 0.01:
                     visibilities[i] = True
         
@@ -176,12 +179,16 @@ class NewtonDataExporter:
     # ========== STEP 4: Extract Colors ==========
     def extract_colors(self, u, v):
         """Extract RGB colors for each point."""
-        color_img = self.color_image.numpy()[0, 0]  # (H, W, 3)
+        color_img = self.color_image.numpy()[0, 0]  # (H, W) as uint32 packed RGBA
         colors = np.zeros((len(u), 3), dtype=np.uint8)
         
         for i, (u_i, v_i) in enumerate(zip(u, v)):
             if 0 <= int(u_i) < self.render_width and 0 <= int(v_i) < self.render_height:
-                colors[i] = color_img[int(v_i), int(u_i), :3]
+                # Unpack uint32 RGBA to RGB
+                packed = color_img[int(v_i), int(u_i)]
+                colors[i, 0] = (packed >> 0) & 0xFF  # R
+                colors[i, 1] = (packed >> 8) & 0xFF  # G
+                colors[i, 2] = (packed >> 16) & 0xFF  # B
         
         return colors
     
@@ -200,10 +207,10 @@ class NewtonDataExporter:
     def get_camera_transforms(self):
         """Get camera transforms for sensor."""
         pose = self.get_camera_pose()
-        return wp.array([[[wp.transformf(
+        return wp.array([[wp.transformf(
             wp.vec3f(*pose[:3, 3]),
             wp.quatf(*Rotation.from_matrix(pose[:3, :3]).as_quat()),
-        )]]], dtype=wp.transformf)
+        )]], dtype=wp.transformf)
     
     def get_intrinsics(self):
         """Get camera intrinsics."""
