@@ -151,6 +151,7 @@ class MultiCameraRecorder:
         self._save_threads: list[threading.Thread] = []
         self._depth_sensor = None
         self._depth_rays: list[wp.array | None] = [None] * num_cameras
+        self._depth_ray_fovs: list[float | None] = [None] * num_cameras
         self._depth_buffers: list[wp.array | None] = [None] * num_cameras
 
     def set_camera_config(
@@ -355,16 +356,17 @@ class MultiCameraRecorder:
 
     def _capture_single_camera_depth(self, camera_id: int) -> None:
         """Capture and save a depth map for one recording camera."""
+        import numpy as np
         self._ensure_depth_sensor()
 
         state = self._depth_state_getter()
         self._depth_sensor.sync_transforms(state)
 
-        config = self._camera_configs[camera_id]
-        camera_transform = wp.array([[self._camera_config_to_transform(config)]], dtype=wp.transform)
+        recording_camera = self._get_or_create_recording_camera(camera_id, self._camera_configs[camera_id])
+        camera_transform = wp.array([[self._get_recording_camera_transform(recording_camera)]], dtype=wp.transformf)
 
         self._ensure_depth_buffer(camera_id)
-        camera_rays = self._get_depth_rays(camera_id)
+        camera_rays = self._get_depth_rays(camera_id, recording_camera.fov)
 
         self._depth_sensor.update(
             state,
@@ -375,8 +377,15 @@ class MultiCameraRecorder:
         )
 
         depth_np = self._depth_buffers[camera_id].numpy()[0, 0]
+
+        rays_np = camera_rays.numpy()[0]          # (H, W, 2, 3)
+        ray_dir_z = rays_np[..., 1, 2]            # 第 1 個 vec3 才是 direction
+
+        z_depth_m = depth_np * (-ray_dir_z)
+        z_depth_mm = np.clip(np.rint(z_depth_m * 1000.0), 0, np.iinfo(np.uint16).max).astype(np.uint16)
+
         depth_path = self.output_dir / self.camera_names[camera_id] / "depth" / f"{self._frame_idx - self.skip_frames:05d}.npy"
-        self._save_depth_array(depth_np, depth_path)
+        self._save_depth_array(z_depth_mm, depth_path)
 
     def _ensure_depth_sensor(self) -> None:
         """Create the tiled camera sensor lazily when depth export is enabled."""
@@ -406,30 +415,45 @@ class MultiCameraRecorder:
 
         self._depth_buffers[camera_id] = self._depth_sensor.create_depth_image_output(width, height, 1)
         self._depth_rays[camera_id] = None
+        self._depth_ray_fovs[camera_id] = None
 
-    def _get_depth_rays(self, camera_id: int) -> wp.array:
+    def _get_depth_rays(self, camera_id: int, fov_degrees: float) -> wp.array:
         """Return cached pinhole rays for the current camera configuration."""
-        if self._depth_rays[camera_id] is not None:
+        if self._depth_rays[camera_id] is not None and self._depth_ray_fovs[camera_id] == fov_degrees:
             return self._depth_rays[camera_id]
 
         import math  # noqa: PLC0415
 
         width, height = self._get_framebuffer_size()
-        fov_radians = math.radians(self._camera_configs[camera_id]["fov"])
+        fov_radians = math.radians(fov_degrees)
         self._depth_rays[camera_id] = self._depth_sensor.compute_pinhole_camera_rays(width, height, fov_radians)
+        self._depth_ray_fovs[camera_id] = fov_degrees
         return self._depth_rays[camera_id]
 
-    def _camera_config_to_transform(self, config: dict) -> wp.transform:
-        """Convert a recorder camera config into a SensorTiledCamera transform."""
-        import math  # noqa: PLC0415
+    def _get_recording_camera_transform(self, camera) -> wp.transformf:
+        """Build the sensor transform from the actual recording camera pose."""
+        return wp.transformf(
+            camera.pos,
+            wp.quat_from_matrix(wp.mat33f(camera.get_view_matrix().reshape(4, 4)[:3, :3])),
+        )
 
-        pitch = math.radians(config["pitch"])
-        yaw = math.radians(config["yaw"])
+    def get_camera_pose_matrices(self, camera_id: int) -> dict[str, list[list[float]]]:
+        import numpy as np
 
-        quat_pitch = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), pitch)
-        quat_yaw = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), yaw)
+        cam = self._get_or_create_recording_camera(camera_id, self._camera_configs[camera_id])
 
-        return wp.transform(config["pos"], quat_yaw * quat_pitch)
+        pos = np.array([cam.pos.x, cam.pos.y, cam.pos.z], dtype=np.float64)
+        c2w_gl = np.eye(4, dtype=np.float64)
+        # Use the same camera matrix path as depth rendering so pose and depth cannot drift.
+        c2w_gl[:3, :3] = cam.get_view_matrix().reshape(4, 4)[:3, :3]
+        c2w_gl[:3, 3] = pos
+
+        cv_to_gl = np.diag([1.0, -1.0, -1.0, 1.0])
+        c2w_cv = c2w_gl @ cv_to_gl
+        return {
+            "c2w_gl": c2w_gl.tolist(),
+            "c2w_cv": c2w_cv.tolist(),
+        }
 
     def _save_depth_array(self, depth: object, filename: Path) -> None:
         """Save a depth array to disk."""

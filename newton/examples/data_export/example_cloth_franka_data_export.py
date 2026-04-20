@@ -182,17 +182,22 @@ class ClothFrankaDataExportExample:
             "frame": frame_idx,
             "cameras": []
         }
+
+        render_width = self.viewer.renderer._screen_width
+        render_height = self.viewer.renderer._screen_height
         
-        for camera_config in self.camera_configs:
+        for cam_id, camera_config in enumerate(self.camera_configs):
             # Compute intrinsics for this camera's FOV
             fov_degrees = camera_config["fov"]
             fov_rad = np.radians(fov_degrees)
-            render_width, render_height = 1024, 768  # Standard resolution
-            fx = render_width / (2 * np.tan(fov_rad / 2))
-            fy = render_height / (2 * np.tan(fov_rad / 2))
+            
+            f = render_height / (2 * np.tan(fov_rad / 2))
+            fx = f
+            fy = f
             cx = render_width / 2.0
             cy = render_height / 2.0
-            
+            pose = self.cloth_franka.recorder.get_camera_pose_matrices(cam_id)
+
             camera_info["cameras"].append({
                 "name": camera_config["name"],
                 "intrinsics": {
@@ -207,6 +212,8 @@ class ClothFrankaDataExportExample:
                     "position": camera_config["pos"],
                     "pitch": camera_config["pitch"],
                     "yaw": camera_config["yaw"],
+                    "c2w_gl": pose["c2w_gl"],
+                    "c2w_cv": pose["c2w_cv"],
                 }
             })
         
