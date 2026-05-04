@@ -23,6 +23,8 @@ from pathlib import Path
 from PIL import Image
 import json
 import time
+import shutil
+import os
 
 import newton
 import newton.examples
@@ -223,9 +225,49 @@ class ClothFrankaDataExportExample:
         
         print(f"  ✓ Exported camera info to {info_path.name}")
     
+    def _sync_to_phystwin(self) -> None:
+        """Sync the exported data to PhysTwin/data/different_types/.
+        
+        This method copies the cloth_franka_data_export directory to PhysTwin
+        after the simulation completes.
+        """
+        # Get the path to PhysTwin relative to this file's location
+        # This assumes the directory structure: /path/newton/ and /path/PhysTwin/
+        newton_root = Path(__file__).parent.parent.parent.parent  # Go up to newton root
+        phystwin_dir = newton_root / "PhysTwin" / "data" / "different_types"
+        
+        # If PhysTwin directory doesn't exist, skip
+        if not phystwin_dir.exists():
+            print(f"  Note: PhysTwin directory not found at {phystwin_dir}")
+            print("  Skipping PhysTwin sync.")
+            return
+        
+        # Create target directory for this data
+        # Name it with a timestamp or keep it as cloth_franka_new
+        target_dir = phystwin_dir / "cloth_franka_new"
+        
+        # Remove existing target if it exists
+        if target_dir.exists():
+            print(f"  Removing existing target directory: {target_dir}")
+            shutil.rmtree(target_dir)
+        
+        # Copy the entire directory
+        print(f"\n  Syncing data to PhysTwin...")
+        print(f"    Source: {self.output_dir}")
+        print(f"    Target: {target_dir}")
+        
+        try:
+            shutil.copytree(self.output_dir, target_dir, dirs_exist_ok=False)
+            print(f"  ✓ Successfully synced data to {target_dir}")
+            print(f"    Total files: {sum(1 for _ in target_dir.rglob('*') if _.is_file())}")
+        except Exception as e:
+            print(f"  ✗ Error syncing to PhysTwin: {e}")
+    
     def test_final(self):
         """Test final state (delegated to cloth_franka)."""
         self.cloth_franka.test_final()
+        # Sync data to PhysTwin after simulation completes
+        self._sync_to_phystwin()
     
     def test_post_step(self):
         """Test after each step (delegated to cloth_franka)."""
@@ -249,3 +291,4 @@ if __name__ == "__main__":
     print("\n✓ Cloth Franka simulation with data export complete!")
     print("  Videos: ./cloth_franka_recordings/")
     print("  Camera data: ./cloth_franka_data_export/")
+    print("  PhysTwin sync: Check PhysTwin/data/different_types/cloth_franka_new/")
