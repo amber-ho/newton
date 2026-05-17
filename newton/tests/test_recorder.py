@@ -193,6 +193,66 @@ def test_multi_camera_recorder_depth_configuration(test: TestRecorder, device):
         test.assertEqual(recorder.get_frame_count(), 0)
 
 
+def test_multi_camera_recorder_pose_uses_camera_basis(test: TestRecorder, device):
+    """Camera pose export should preserve per-camera viewing direction."""
+
+    class _StubRenderer:
+        _screen_width = 64
+        _screen_height = 48
+
+    class _StubViewer:
+        def __init__(self):
+            self.renderer = _StubRenderer()
+            self.device = wp.get_device(device)
+
+    class _Pos:
+        def __init__(self, x, y, z):
+            self.x = x
+            self.y = y
+            self.z = z
+
+    class _StubCamera:
+        def __init__(self, pos, front, up):
+            self.pos = _Pos(*pos)
+            self._front = np.array(front, dtype=np.float32)
+            self._up = np.array(up, dtype=np.float32)
+            self._right = np.cross(self._front, self._up)
+
+        def get_front(self):
+            return self._front
+
+        def get_up(self):
+            return self._up
+
+        def get_right(self):
+            return self._right
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        recorder = MultiCameraRecorder(
+            _StubViewer(),
+            output_dir=tmpdir,
+            num_cameras=2,
+            camera_names=["front", "side"],
+        )
+
+        cameras = [
+            _StubCamera(pos=(1.0, 2.0, 3.0), front=(0.0, 1.0, 0.0), up=(0.0, 0.0, 1.0)),
+            _StubCamera(pos=(1.0, 2.0, 3.0), front=(1.0, 0.0, 0.0), up=(0.0, 0.0, 1.0)),
+        ]
+        recorder._get_or_create_recording_camera = lambda camera_id, config: cameras[camera_id]
+
+        front_pose = np.array(recorder.get_camera_pose_matrices(0)["c2w_gl"])
+        side_pose = np.array(recorder.get_camera_pose_matrices(1)["c2w_gl"])
+
+        np.testing.assert_allclose(front_pose[:3, 3], [1.0, 2.0, 3.0], atol=1e-6)
+        np.testing.assert_allclose(side_pose[:3, 3], [1.0, 2.0, 3.0], atol=1e-6)
+
+        np.testing.assert_allclose(front_pose[:3, :3] @ np.array([0.0, 0.0, -1.0]), [0.0, 1.0, 0.0], atol=1e-6)
+        np.testing.assert_allclose(side_pose[:3, :3] @ np.array([0.0, 0.0, -1.0]), [1.0, 0.0, 0.0], atol=1e-6)
+
+        test.assertFalse(np.allclose(front_pose, side_pose))
+
+
 def test_recorder_ringbuffer_save_load(test: TestRecorder, device):
     """Test ViewerFile with RingBuffer save/load functionality."""
     builder = newton.ModelBuilder()
@@ -441,6 +501,13 @@ add_function_test(
     TestRecorder,
     "test_multi_camera_recorder_depth_configuration",
     test_multi_camera_recorder_depth_configuration,
+    devices=devices,
+)
+
+add_function_test(
+    TestRecorder,
+    "test_multi_camera_recorder_pose_uses_camera_basis",
+    test_multi_camera_recorder_pose_uses_camera_basis,
     devices=devices,
 )
 

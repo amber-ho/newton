@@ -430,11 +430,24 @@ class MultiCameraRecorder:
         self._depth_ray_fovs[camera_id] = fov_degrees
         return self._depth_rays[camera_id]
 
+    @staticmethod
+    def _get_recording_camera_rotation_matrix(camera) -> object:
+        """Build a camera-to-world rotation matrix from the viewer camera basis."""
+        import numpy as np  # noqa: PLC0415
+
+        right = np.array(camera.get_right(), dtype=np.float32)
+        up = np.array(camera.get_up(), dtype=np.float32)
+        front = np.array(camera.get_front(), dtype=np.float32)
+
+        # SensorTiledCamera rays use camera-space axes: +X right, +Y up, -Z forward.
+        return np.column_stack((right, up, -front))
+
     def _get_recording_camera_transform(self, camera) -> wp.transformf:
         """Build the sensor transform from the actual recording camera pose."""
+        rotation_matrix = self._get_recording_camera_rotation_matrix(camera)
         return wp.transformf(
             camera.pos,
-            wp.quat_from_matrix(wp.mat33f(camera.get_view_matrix().reshape(4, 4)[:3, :3])),
+            wp.quat_from_matrix(wp.mat33f(*rotation_matrix.reshape(-1).tolist())),
         )
 
     def get_camera_pose_matrices(self, camera_id: int) -> dict[str, list[list[float]]]:
@@ -444,8 +457,8 @@ class MultiCameraRecorder:
 
         pos = np.array([cam.pos.x, cam.pos.y, cam.pos.z], dtype=np.float64)
         c2w_gl = np.eye(4, dtype=np.float64)
-        # Use the same camera matrix path as depth rendering so pose and depth cannot drift.
-        c2w_gl[:3, :3] = cam.get_view_matrix().reshape(4, 4)[:3, :3]
+        # Use the same camera basis as depth rendering so pose and depth cannot drift.
+        c2w_gl[:3, :3] = self._get_recording_camera_rotation_matrix(cam)
         c2w_gl[:3, 3] = pos
 
         cv_to_gl = np.diag([1.0, -1.0, -1.0, 1.0])
