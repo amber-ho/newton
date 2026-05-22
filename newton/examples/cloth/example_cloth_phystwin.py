@@ -179,7 +179,7 @@ class Example:
             )
             self.export_dt = float(data["dt"]) if "dt" in data else 1.0 / 30.0
             self.original_substeps = int(data["num_substeps"]) if "num_substeps" in data else 1
-            self.particle_radius = float(data["collision_dist"]) if "collision_dist" in data else 0.02
+            self.particle_radius = float(data["collision_dist"])/5 if "collision_dist" in data else 0.02
             self.drag_damping = float(data["drag_damping"]) if "drag_damping" in data else 0.0
             self.export_dashpot_damping = float(data["dashpot_damping"]) if "dashpot_damping" in data else 0.0
             self.contact_friction = float(data["collide_fric"]) if "collide_fric" in data else 0.3

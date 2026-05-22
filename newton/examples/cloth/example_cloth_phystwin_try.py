@@ -704,22 +704,52 @@ class Example:
             state_in.joint_qd,
             include_rotation=include_rotation,
         )
-        J = self.J_flat.numpy().reshape(-1, self.model.joint_dof_count)
-        delta_target = self.ee_delta.numpy()[0]
-        J_inv = np.linalg.pinv(J)
+        J = self.J_flat.numpy().reshape(-1, self.model.joint_dof_count).astype(np.float32)
+        delta_target = self.ee_delta.numpy()[0].astype(np.float32)
+
+        # 防止 NaN / Inf 進入 pinv
+        if (not np.isfinite(J).all()) or (not np.isfinite(delta_target).all()):
+            print("[WARN] Non-finite Jacobian or target delta. Holding robot.")
+            self.target_joint_qd.zero_()
+            return
+
+        q = state_in.joint_q.numpy().astype(np.float32)
+        if not np.isfinite(q).all():
+            print("[WARN] Non-finite joint_q. Holding robot.")
+            self.target_joint_qd.zero_()
+            return
+
+        # 限制 target error，避免一次要求太大的 end-effector motion
+        delta_target = np.nan_to_num(delta_target, nan=0.0, posinf=0.0, neginf=0.0)
+        delta_target = np.clip(delta_target, -5.0, 5.0)
+
+        # Damped least-squares pseudo inverse，比 np.linalg.pinv 穩
+        # J_dls = J.T @ inv(J @ J.T + lambda^2 I)
+        damping = 1e-2
+        JJT = J @ J.T
+        A = JJT + (damping * damping) * np.eye(JJT.shape[0], dtype=np.float32)
+
+        try:
+            J_inv = J.T @ np.linalg.solve(A, np.eye(A.shape[0], dtype=np.float32))
+        except np.linalg.LinAlgError:
+            print("[WARN] Damped IK solve failed. Holding robot.")
+            self.target_joint_qd.zero_()
+            return
 
         I = np.eye(J.shape[1], dtype=np.float32)
         N = I - J_inv @ J
 
-        q = state_in.joint_q.numpy()
-
         q_des = q.copy()
         q_des[1:] = self.initial_pose[1:]
 
-        K_null = 1.0
+        K_null = 0.2
         delta_q_null = K_null * (q_des - q)
 
         delta_q = J_inv @ delta_target + N @ delta_q_null
+
+        # 避免 joint velocity 太大
+        delta_q = np.nan_to_num(delta_q, nan=0.0, posinf=0.0, neginf=0.0)
+        delta_q = np.clip(delta_q, -2.0, 2.0)
 
         # Apply gripper finger control (finger positions in cm)
         delta_q[-2] = self.target[-1] * 4.0 - q[-2]
